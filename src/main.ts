@@ -424,17 +424,23 @@ async function main(): Promise<void> {
   // 捕获未处理的异常
   process.on('uncaughtException', error => {
     if (isMaiBotConnectionError(error)) {
-      basicErrorLogger.warn('⚠️ MaiBot 连接错误（不影响主程序运行）', undefined, error);
+      basicErrorLogger.warn('⚠️ MaiBot 连接错误（不影响主程序运行）', {
+        error: error.message,
+        stack: error.stack,
+      });
       return;
     }
     basicErrorLogger.error('未捕获的异常', undefined, error);
     app.shutdown().then(() => process.exit(1));
   });
 
-  process.on('unhandledRejection', (reason, promise) => {
+  process.on('unhandledRejection', reason => {
     const err = reason instanceof Error ? reason : new Error(String(reason));
     if (isMaiBotConnectionError(err)) {
-      basicErrorLogger.warn('⚠️ MaiBot 连接错误（不影响主程序运行）', undefined, err);
+      basicErrorLogger.warn('⚠️ MaiBot 连接错误（不影响主程序运行）', {
+        error: err.message,
+        stack: err.stack,
+      });
       return;
     }
     basicErrorLogger.error('未处理的Promise拒绝', undefined, err);

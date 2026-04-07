@@ -307,7 +307,7 @@ export class OpenAIProvider implements ILLMProvider {
       frequency_penalty: z.number().min(-2).max(2).optional(),
       presence_penalty: z.number().min(-2).max(2).optional(),
       stop: z.union([z.string(), z.array(z.string())]).optional(),
-      stream: z.boolean().optional(),
+      stream: z.boolean(),
     });
 
     return schema.parse(config);
