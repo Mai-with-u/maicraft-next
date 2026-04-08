@@ -4,7 +4,7 @@
   "description": "minecraft for maibot，but typescript",
   "main": "dist/main.js",
   "scripts": {
-    "build": "tsc",
+    "build": "npm run clean && tsc && node scripts/fix-dist-imports.cjs",
     "start": "node dist/main.js",
     "dev": "tsx src/main.ts",
     "dev:clean": "tsx src/main.ts --clean-data",
@@ -18,7 +18,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "clean": "rimraf dist",
-    "clean:all": "rimraf dist && rimraf node_modules"
+    "clean:all": "rimraf dist && rimraf node_modules",
+    "start:dev": "tsx src/main.ts"
   },
   "repository": {
     "type": "git",

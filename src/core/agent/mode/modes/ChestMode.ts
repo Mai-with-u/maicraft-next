@@ -268,8 +268,8 @@ export class ChestMode extends BaseMode {
     // 生成提示词
     const prompt = promptManager.generatePrompt('chest_operation', {
       chest_gui: chestDescription,
-      bot_name: this.state.context.gameState.playerName || 'Bot',
-      player_name: this.state.context.gameState.playerName || 'Player',
+      bot_name: this.state.config.minecraft.username || this.state.context.gameState.playerName || 'MaicraftBot',
+      player_name: this.state.config.minecraft.username || this.state.context.gameState.playerName || 'MaicraftBot',
       context_info: contextInfo,
       current_goal: currentGoal ? `当前目标: ${currentGoal.description}` : '',
       current_tasks: currentTask ? `当前任务: ${currentTask.description}` : '',
@@ -277,8 +277,8 @@ export class ChestMode extends BaseMode {
 
     // 生成系统提示词
     const systemPrompt = promptManager.generatePrompt('chest_operation_system', {
-      bot_name: this.state.context.gameState.playerName || 'Bot',
-      player_name: this.state.context.gameState.playerName || 'Player',
+      bot_name: this.state.config.minecraft.username || this.state.context.gameState.playerName || 'MaicraftBot',
+      player_name: this.state.config.minecraft.username || this.state.context.gameState.playerName || 'MaicraftBot',
     });
 
     this.logger.info('📦 [ChestMode] 提示词生成完成，准备请求LLM...');

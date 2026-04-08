@@ -15,9 +15,22 @@ export class ChatAction extends BaseAction<ChatParams> {
   readonly description = '发送聊天消息到游戏中';
 
   async execute(context: RuntimeContext, params: ChatParams): Promise<ActionResult> {
-    const { message } = params;
+    const rawMessage = params?.message;
 
     try {
+      const message =
+        typeof rawMessage === 'string'
+          ? rawMessage
+          : rawMessage == null
+            ? ''
+            : (() => {
+                try {
+                  return JSON.stringify(rawMessage);
+                } catch {
+                  return String(rawMessage);
+                }
+              })();
+
       // 验证消息
       if (!message || message.trim().length === 0) {
         return this.failure('消息不能为空');

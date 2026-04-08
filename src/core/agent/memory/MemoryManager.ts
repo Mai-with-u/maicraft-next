@@ -131,19 +131,35 @@ export class MemoryManager {
     }
   }
 
+  private stringifyForLog(value: unknown): string {
+    if (typeof value === 'string') return value;
+    if (value == null) return '';
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+
+  private truncateForLog(value: unknown, maxLength: number = 50): string {
+    const text = this.stringifyForLog(value);
+    return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
+  }
+
   /**
    * 记录对话
    */
   recordConversation(speaker: string, message: string, context?: Record<string, any>): void {
+    const safeMessage = this.stringifyForLog(message);
     const entry = {
       id: this.generateId(),
       speaker,
-      message,
+      message: safeMessage,
       context,
       timestamp: Date.now(),
     };
     this.conversations.add(entry);
-    this.logger.debug(`💬 记录对话: ${speaker} - ${message.substring(0, 50)}${message.length > 50 ? '...' : ''}`);
+    this.logger.debug(`💬 记录对话: ${speaker} - ${this.truncateForLog(safeMessage, 50)}`);
 
     // 推送记忆更新
     if (this.webSocketServer?.memoryDataProvider) {
@@ -181,17 +197,19 @@ export class MemoryManager {
    * 记录经验
    */
   recordExperience(lesson: string, context: string, confidence: number = 0.5): void {
+    const safeLesson = this.stringifyForLog(lesson);
+    const safeContext = this.stringifyForLog(context);
     const entry = {
       id: this.generateId(),
-      lesson,
-      context,
+      lesson: safeLesson,
+      context: safeContext,
       confidence,
       occurrences: 1,
       timestamp: Date.now(),
       lastOccurrence: Date.now(),
     };
     this.experiences.add(entry);
-    this.logger.debug(`📚 记录经验: ${lesson.substring(0, 50)}${lesson.length > 50 ? '...' : ''} (置信度: ${(confidence * 100).toFixed(0)}%)`);
+    this.logger.debug(`📚 记录经验: ${this.truncateForLog(safeLesson, 50)} (置信度: ${(confidence * 100).toFixed(0)}%)`);
 
     // 推送记忆更新
     if (this.webSocketServer?.memoryDataProvider) {
@@ -417,51 +435,81 @@ export class MemoryManager {
    * 格式化动作参数，保持简洁可读
    */
   private formatActionParams(actionType: string, params: any): string {
-    if (!params) return '';
+    if (!params || typeof params !== 'object') return '';
+
+    const hasNum = (value: any): value is number => typeof value === 'number' && Number.isFinite(value);
+    const hasText = (value: any): value is string => typeof value === 'string' && value.trim().length > 0;
 
     switch (actionType) {
       case 'move':
-        return params.x && params.y && params.z ? `(${params.x.toFixed(0)},${params.y.toFixed(0)},${params.z.toFixed(0)})` : '';
+        return hasNum(params.x) && hasNum(params.y) && hasNum(params.z)
+          ? `(${params.x.toFixed(0)},${params.y.toFixed(0)},${params.z.toFixed(0)})`
+          : '';
 
       case 'find_block':
-        return params.block ? `(${params.block})` : '';
+        return hasText(params.block) ? `(${params.block})` : '';
 
       case 'mine_at_position':
       case 'mine_block':
-        return params.x && params.y && params.z ? `(${params.x.toFixed(0)},${params.y.toFixed(0)},${params.z.toFixed(0)})` : '';
+        return hasNum(params.x) && hasNum(params.y) && hasNum(params.z)
+          ? `(${params.x.toFixed(0)},${params.y.toFixed(0)},${params.z.toFixed(0)})`
+          : '';
 
       case 'mine_by_type':
-        return params.blockType ? `(${params.blockType})` : '';
+        return hasText(params.blockType) ? `(${params.blockType})` : '';
 
       case 'mine_in_direction':
-        return params.direction ? `(${params.direction})` : '';
+        return hasText(params.direction) ? `(${params.direction})` : '';
 
       case 'place_block':
-        return params.block && params.x && params.y && params.z
+        return hasText(params.block) && hasNum(params.x) && hasNum(params.y) && hasNum(params.z)
           ? `(${params.block}→${params.x.toFixed(0)},${params.y.toFixed(0)},${params.z.toFixed(0)})`
           : '';
 
       case 'craft':
-        return params.item && params.count ? `(${params.item}×${params.count})` : params.item ? `(${params.item})` : '';
+        return hasText(params.item) && hasNum(params.count)
+          ? `(${params.item}×${params.count})`
+          : hasText(params.item)
+            ? `(${params.item})`
+            : '';
 
       case 'use_chest':
       case 'use_furnace':
-        return params.position ? `(x${params.position.x},y${params.position.y},z${params.position.z})` : '';
+        return params.position && hasNum(params.position.x) && hasNum(params.position.y) && hasNum(params.position.z)
+          ? `(x${params.position.x},y${params.position.y},z${params.position.z})`
+          : '';
 
       case 'eat':
-        return params.item ? `(${params.item})` : '';
+        return hasText(params.item) ? `(${params.item})` : '';
 
       case 'toss_item':
-        return params.item && params.count ? `(${params.item}×${params.count})` : '';
+        return hasText(params.item) && hasNum(params.count)
+          ? `(${params.item}×${params.count})`
+          : hasText(params.item)
+            ? `(${params.item})`
+            : '';
 
       case 'kill_mob':
-        return params.entity ? `(${params.entity})` : '';
+        return hasText(params.entity) ? `(${params.entity})` : '';
 
       case 'set_location':
-        return params.name && params.type ? `(${params.type}:${params.name})` : '';
+        return hasText(params.name) && hasText(params.type) ? `(${params.type}:${params.name})` : '';
 
-      case 'chat':
-        return params.message ? `("${params.message.substring(0, 20)}${params.message.length > 20 ? '...' : ''}")` : '';
+      case 'chat': {
+        let text = '';
+
+        if (typeof params.message === 'string') {
+          text = params.message;
+        } else if (params.message != null) {
+          try {
+            text = JSON.stringify(params.message);
+          } catch {
+            text = String(params.message);
+          }
+        }
+
+        return text ? `("${text.slice(0, 20)}${text.length > 20 ? '...' : ''}")` : '';
+      }
 
       case 'swim_to_land':
         return '';

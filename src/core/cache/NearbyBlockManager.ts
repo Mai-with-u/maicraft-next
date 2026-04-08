@@ -34,6 +34,10 @@ interface TerrainAnalysis {
  */
 export class NearbyBlockManager {
   private logger: Logger;
+  private isValidPosition(position: BlockPosition | null | undefined): position is BlockPosition {
+    return !!position && Number.isFinite(position.x) && Number.isFinite(position.y) && Number.isFinite(position.z);
+  }
+
   private blockCache: BlockCache;
   private bot: Bot | null = null;
 
@@ -58,6 +62,15 @@ export class NearbyBlockManager {
    */
   getVisibleBlocksInfo(position: BlockPosition, distance: number = 16): string {
     try {
+      if (!this.isValidPosition(position)) {
+        return '位置信息无效，暂时无法查询附近方块';
+      }
+
+      if (position.x === 0 && position.y === 0 && position.z === 0 && this.blockCache.size() === 0) {
+        this.logger.debug('跳过原点空缓存查询，等待玩家位置和扫描初始化');
+        return '玩家位置/方块缓存尚未初始化，等待扫描更新...';
+      }
+
       // 🆕 获取距离范围内的所有方块（如果启用onlyVisibleBlocks，这些方块都是可见的）
       const blocks = this.blockCache.getBlocksInRadius(position.x, position.y, position.z, distance);
 

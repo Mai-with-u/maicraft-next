@@ -72,6 +72,28 @@ export interface MainThinkingData {
 export class PromptDataCollector {
   private logger: Logger;
 
+  private isValidPosition(pos: any): pos is { x: number; y: number; z: number } {
+    return !!pos && typeof pos.x === 'number' && typeof pos.y === 'number' && typeof pos.z === 'number' && Number.isFinite(pos.x) && Number.isFinite(pos.y) && Number.isFinite(pos.z);
+  }
+
+  private getReliableBlockPosition(): { x: number; y: number; z: number } | null {
+    const { gameState, bot } = this.state.context;
+
+    if (this.isValidPosition(bot?.entity?.position)) {
+      return bot!.entity.position.floored();
+    }
+
+    if (this.isValidPosition(gameState.blockPosition)) {
+      const { x, y, z } = gameState.blockPosition;
+      if (!(x === 0 && y === 0 && z === 0)) {
+        return gameState.blockPosition;
+      }
+    }
+
+    return null;
+  }
+
+
   constructor(
     private state: AgentState,
     private actionPromptGenerator: ActionPromptGenerator,
@@ -87,14 +109,14 @@ export class PromptDataCollector {
     const { planningManager } = this.state;
 
     return {
-      bot_name: 'AI Bot',
+      bot_name: this.state.config.minecraft.username || 'MaicraftBot',
       player_name: gameState.playerName || 'Bot',
       self_info: this.formatSelfInfo(gameState),
       goal: this.state.goal,
       to_do_list: planningManager?.generateStatusSummary() || '暂无任务',
       self_status_info: this.formatStatusInfo(gameState),
       inventory_info: gameState.getInventoryDescription?.() || '空',
-      position: this.formatPosition(gameState.blockPosition),
+      position: this.formatPosition(this.getReliableBlockPosition() || gameState.blockPosition),
       block_search_distance: 50, // 方块搜索距离
       nearby_block_info: this.getNearbyBlocksInfo(),
       container_search_distance: 32, // 容器搜索距离
@@ -204,6 +226,9 @@ export class PromptDataCollector {
   }
 
   private formatPosition(pos: any): string {
+    if (!this.isValidPosition(pos)) {
+      return '位置: 未知';
+    }
     return `位置: (${pos.x}, ${pos.y}, ${pos.z})`;
   }
 
@@ -252,15 +277,10 @@ export class PromptDataCollector {
 
       // 使用实时的玩家位置，而不是可能过时的gameState.blockPosition
       // gameState.blockPosition只在玩家移动时更新，静止时是过时的
-      let currentPosition;
-      if (bot?.entity?.position) {
-        currentPosition = bot.entity.position.floored();
-      } else {
-        currentPosition = gameState.blockPosition;
-      }
+      const currentPosition = this.getReliableBlockPosition();
 
       if (!currentPosition) {
-        return '位置信息不可用';
+        return '位置信息不可用，可能还未完成出生/同步，暂时跳过附近方块分析';
       }
 
       // 使用 NearbyBlockManager 获取格式化的方块信息
@@ -295,7 +315,10 @@ export class PromptDataCollector {
       }
 
       // 按距离排序
-      const botPosition = gameState.blockPosition;
+      const botPosition = this.getReliableBlockPosition();
+      if (!botPosition) {
+        return '位置信息不可用，无法计算附近方块距离';
+      }
       validBlocks.sort((a, b) => {
         const distA = Math.sqrt(
           Math.pow(a.position.x - botPosition.x, 2) + Math.pow(a.position.y - botPosition.y, 2) + Math.pow(a.position.z - botPosition.z, 2),
@@ -339,6 +362,10 @@ export class PromptDataCollector {
     try {
       const { gameState } = this.state.context;
       const nearbyContainers = gameState.getNearbyContainers?.(32) || [];
+      const botPosition = this.getReliableBlockPosition();
+      if (!botPosition) {
+        return '位置信息不可用，暂时跳过容器距离分析';
+      }
 
       // 调试日志
       this.logger.debug(`📦 获取容器信息: 找到 ${nearbyContainers.length} 个容器`);
@@ -357,8 +384,8 @@ export class PromptDataCollector {
 
       // 按距离排序容器
       nearbyContainers.sort((a, b) => {
-        const distA = a.position.distanceTo(gameState.blockPosition);
-        const distB = b.position.distanceTo(gameState.blockPosition);
+        const distA = a.position.distanceTo(botPosition as any);
+        const distB = b.position.distanceTo(botPosition as any);
         return distA - distB;
       });
 
@@ -367,7 +394,7 @@ export class PromptDataCollector {
       for (const container of nearbyContainers.slice(0, 8)) {
         // 最多显示8个容器
         const pos = container.position;
-        const distance = pos.distanceTo(gameState.blockPosition);
+        const distance = pos.distanceTo(botPosition as any);
 
         let line = `  ${container.type}`;
         line += `(${pos.x}, ${pos.y}, ${pos.z})`;

@@ -1,30 +1,23 @@
 /**
  * 主动聊天模板
- *
- * 对应 maicraft 的主动聊天模板
  */
 
 import { PromptTemplate, promptManager } from '@/core/agent/prompt/prompt_manager';
 
-/**
- * 注册主动聊天模板
- */
 export function initChatInitiateTemplate(): void {
   promptManager.registerTemplate(
     new PromptTemplate(
       'chat_initiate',
-      `# 最近对话
+      `# 最近对话记录
 {recent_conversations}
 
-# 当前活动
-{current_activity}
+# 当前状态
+正在做：{current_activity}
+位置：{position}
 
-# 当前位置
-{position}
-
-现在你想主动发起一个话题或分享一些信息。`,
+你想主动说点什么。可以分享当前在做的事、遇到的有趣情况，或者随口问一句。`,
       '主动聊天',
-      ['player_name', 'recent_conversations', 'current_activity', 'position'],
+      ['recent_conversations', 'current_activity', 'position'],
     ),
   );
 }

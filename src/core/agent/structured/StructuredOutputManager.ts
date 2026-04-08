@@ -652,7 +652,7 @@ export class StructuredOutputManager {
    */
   private async requestWithManualParsing(prompt: string, systemPrompt: string | undefined): Promise<StructuredLLMResponse | null> {
     try {
-      const fullPrompt = `${prompt}\n\n请以JSON格式返回你的响应。`;
+      const fullPrompt = `${prompt}\n\n只返回一个合法 JSON 对象，不要代码块，不要解释文字。`;
 
       const response = await this.llmManager.chatCompletion(fullPrompt, systemPrompt);
 
@@ -664,12 +664,27 @@ export class StructuredOutputManager {
       // 使用栈解析提取所有JSON对象
       const parsed = this.extractStructuredResponse(response.content);
 
-      if (!parsed) {
-        logger.warn('无法从响应中提取有效的结构化数据', { content: response.content.substring(0, 200) });
+      if (parsed) {
+        return this.validateResponse(parsed);
+      }
+
+      // 第一次解析失败 → 把错误原因回喂给模型，重试一次
+      logger.warn('⚠️ 首次 JSON 解析失败，回喂错误信息重试', { preview: response.content.substring(0, 100) });
+      const retryPrompt = `${fullPrompt}\n\n上一次你的输出无法被解析为合法 JSON，请重新输出，只返回 JSON 对象本身，不要任何其他内容。`;
+      const retryResponse = await this.llmManager.chatCompletion(retryPrompt, systemPrompt);
+
+      if (!retryResponse.success || !retryResponse.content) {
+        logger.error('重试 LLM 调用失败', { error: retryResponse.error });
         return null;
       }
 
-      return this.validateResponse(parsed);
+      const retryParsed = this.extractStructuredResponse(retryResponse.content);
+      if (!retryParsed) {
+        logger.warn('重试后仍无法提取有效结构化数据', { content: retryResponse.content.substring(0, 200) });
+        return null;
+      }
+
+      return this.validateResponse(retryParsed);
     } catch (error) {
       logger.error('手动解析失败', undefined, error as Error);
       return null;

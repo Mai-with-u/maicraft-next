@@ -225,8 +225,8 @@ export class FurnaceMode extends BaseMode {
     // 生成提示词
     const prompt = promptManager.generatePrompt('furnace_operation', {
       furnace_gui: furnaceDescription,
-      bot_name: this.state.context.gameState.playerName || 'Bot',
-      player_name: this.state.context.gameState.playerName || 'Player',
+      bot_name: this.state.config.minecraft.username || this.state.context.gameState.playerName || 'MaicraftBot',
+      player_name: this.state.config.minecraft.username || this.state.context.gameState.playerName || 'MaicraftBot',
       context_info: contextInfo,
       current_goal: currentGoal ? `当前目标: ${currentGoal.description}` : '',
       current_tasks: currentTask ? `当前任务: ${currentTask.description}` : '',
@@ -234,8 +234,8 @@ export class FurnaceMode extends BaseMode {
 
     // 生成系统提示词
     const systemPrompt = promptManager.generatePrompt('furnace_operation_system', {
-      bot_name: this.state.context.gameState.playerName || 'Bot',
-      player_name: this.state.context.gameState.playerName || 'Player',
+      bot_name: this.state.config.minecraft.username || this.state.context.gameState.playerName || 'MaicraftBot',
+      player_name: this.state.config.minecraft.username || this.state.context.gameState.playerName || 'MaicraftBot',
     });
 
     this.logger.debug('🔥 生成熔炉操作提示词完成（包含上下文）');

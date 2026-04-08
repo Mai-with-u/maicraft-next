@@ -171,8 +171,8 @@ export class MainMode extends BaseMode {
     const killMobAction = actionPromptGenerator.generateActionPrompt('kill_mob' as any);
 
     const systemPrompt = promptManager.generatePrompt('main_thinking_system', {
-      bot_name: this.state!.context.gameState.playerName || 'Bot',
-      player_name: this.state!.context.gameState.playerName || 'Player',
+      bot_name: this.state!.config.minecraft.username || this.state!.context.gameState.playerName || 'MaicraftBot',
+      player_name: this.state!.config.minecraft.username || this.state!.context.gameState.playerName || 'MaicraftBot',
       available_actions: availableActions,
       eat_action: eatAction,
       kill_mob_action: killMobAction,
@@ -211,10 +211,19 @@ export class MainMode extends BaseMode {
    * 清理动作参数，去除重复的元数据字段
    */
   private cleanActionParams(action: StructuredAction): Record<string, any> {
-    const cleaned = { ...action };
+    const cleaned = { ...action } as Record<string, any>;
     // 去除元数据字段，只保留动作参数
-    delete (cleaned as any).intention;
-    delete (cleaned as any).action_type;
+    delete cleaned.intention;
+    delete cleaned.action_type;
+
+    if (cleaned.message != null && typeof cleaned.message !== 'string') {
+      try {
+        cleaned.message = JSON.stringify(cleaned.message);
+      } catch {
+        cleaned.message = String(cleaned.message);
+      }
+    }
+
     return cleaned;
   }
 

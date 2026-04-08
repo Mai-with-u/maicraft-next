@@ -1,30 +1,26 @@
 /**
  * 聊天响应模板
- *
- * 对应 maicraft 的聊天相关模板
  */
 
 import { PromptTemplate, promptManager } from '@/core/agent/prompt/prompt_manager';
 
-/**
- * 注册聊天响应模板
- */
 export function initChatResponseTemplate(): void {
   promptManager.registerTemplate(
     new PromptTemplate(
       'chat_response',
-      `# 最近对话
+      `# 最新消息
+{sender_name} 说：{latest_message}{mentioned_bot}
+
+# 最近对话记录
 {recent_conversations}
 
-# 当前活动
-{current_activity}
+# 当前状态
+正在做：{current_activity}
+位置：{position}
 
-# 当前位置
-{position}
-
-请回复最近的聊天消息。`,
+请回复 {sender_name} 的消息。`,
       '聊天响应',
-      ['player_name', 'recent_conversations', 'current_activity', 'position'],
+      ['sender_name', 'latest_message', 'mentioned_bot', 'recent_conversations', 'current_activity', 'position'],
     ),
   );
 }

@@ -375,9 +375,10 @@ function isMaiBotConnectionError(error: Error): boolean {
   const errorObj = error as any;
   const isAggregateError = error.name === 'AggregateError';
   const isConnectionError = errorObj.code === 'ECONNREFUSED' || errorObj.code === 'ETIMEDOUT' || errorObj.code === 'ENOTFOUND';
-  const isNetworkStack = error.stack?.includes('internalConnectMultiple') || error.stack?.includes('afterConnectMultiple');
+  const isNetworkStack = !!(error.stack?.includes('internalConnectMultiple') || error.stack?.includes('afterConnectMultiple'));
 
-  return isConnectionError && (isAggregateError && isNetworkStack) !== undefined;
+  // 修复：原代码 (isAggregateError && isNetworkStack) !== undefined 恒为 true（boolean 永远不是 undefined）
+  return isConnectionError && isAggregateError && isNetworkStack;
 }
 
 /**

@@ -123,11 +123,8 @@ export class Agent {
         this.state.context.gameState.initialize(this.state.context.bot);
       }
 
-      // 初始化记忆系统
-      await this.state.memory.initialize();
-
-      // 初始化规划系统
-      await this.state.planningManager.initialize();
+      // 注意：MemoryManager 和 GoalPlanningManager 已由 DI 容器的 withInitializer 初始化过
+      // 不要在这里重复调用 initialize()，否则会导致双重初始化
 
       // 如果配置中有目标但规划系统中没有，创建初始目标
       if (this.state.goal && !this.state.planningManager.getCurrentGoal()) {
@@ -190,6 +187,12 @@ export class Agent {
     this.isRunning = false;
     this.state.isRunning = false;
 
+    // 清理定期保存定时器，防止重连时多个定时器累积
+    if (this.periodicSaveInterval) {
+      clearInterval(this.periodicSaveInterval);
+      this.periodicSaveInterval = undefined;
+    }
+
     // 停止决策循环
     this.mainLoop.stop();
     this.chatLoop.stop();
@@ -203,12 +206,14 @@ export class Agent {
     this.logger.info('✅ Agent 已停止');
   }
 
+  private periodicSaveInterval?: NodeJS.Timeout;
+
   /**
    * 设置定期保存记忆
    */
   private setupPeriodicSave(): void {
-    // 每30秒保存一次记忆
-    setInterval(async () => {
+    // 每30秒保存一次记忆，保存 interval ID 以便在 stop() 时清理
+    this.periodicSaveInterval = setInterval(async () => {
       try {
         await this.state.memory.saveAll();
       } catch (error) {
@@ -348,7 +353,7 @@ export class Agent {
         health: environmentData.health,
         food: environmentData.food,
         inventory: environmentData.inventory,
-        time: environmentData.time > 12000 ? '夜晚' : '白天',
+        time: environmentData.time, // 已经是字符串 '夜晚'/'白天'，不要再重复判断
         environment: environmentData.environment,
         experiences: this.state.memory.experience
           .getRecent(5)
@@ -366,15 +371,33 @@ export class Agent {
         return null;
       }
 
-      // 解析JSON响应
-      const content = response.content.trim();
-      const jsonMatch = content.match(/```json\s*(\{[\s\S]*?\})\s*```/);
-      if (!jsonMatch) {
-        this.logger.error('LLM响应格式错误，无法解析JSON');
-        return null;
-      }
+      // 解析响应：先尝试直接解析，再用 jsonrepair 修复，最后尝试提取代码块
+      const content = response.content?.trim() || '';
+      let goalData: any = null;
 
-      const goalData = JSON.parse(jsonMatch[1]);
+      // 尝试1：直接 JSON.parse
+      try {
+        goalData = JSON.parse(content);
+      } catch {
+        // 尝试2：提取 ```json``` 代码块
+        const jsonMatch = content.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
+        if (jsonMatch) {
+          try {
+            goalData = JSON.parse(jsonMatch[1]);
+          } catch { /* 继续 */ }
+        }
+
+        // 尝试3：用 jsonrepair 修复
+        if (!goalData) {
+          try {
+            const { jsonrepair } = await import('jsonrepair');
+            goalData = JSON.parse(jsonrepair(content));
+          } catch {
+            this.logger.error('LLM目标生成：无法解析响应为 JSON');
+            return null;
+          }
+        }
+      }
 
       // 验证必需字段
       if (!goalData.goal || !goalData.reasoning) {

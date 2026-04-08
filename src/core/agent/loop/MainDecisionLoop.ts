@@ -80,19 +80,21 @@ export class MainDecisionLoop extends BaseLoop<AgentState> {
     }
 
     // 5. 执行当前模式逻辑
-    await this.executeCurrentMode();
+    const modeExecutedSuccessfully = await this.executeCurrentMode();
 
     // 6. 定期评估任务
     this.evaluationCounter++;
     this.logger.debug(`🔄 循环计数: ${this.evaluationCounter}`);
 
-    if (this.evaluationCounter % 5 === 0) {
+    if (!modeExecutedSuccessfully) {
+      this.logger.warn('⚠️ 本轮模式执行失败，跳过任务评估和经验总结以避免无效LLM调用');
+    } else if (this.evaluationCounter % 5 === 0) {
       this.logger.debug('📋 执行任务评估');
       await this.evaluateTask();
     }
 
     // 7. 定期总结经验（每10次循环）
-    if (this.evaluationCounter % 10 === 0) {
+    if (modeExecutedSuccessfully && this.evaluationCounter % 10 === 0) {
       this.logger.debug('📚 执行经验总结');
       await this.summarizeExperience();
     }
@@ -168,9 +170,10 @@ export class MainDecisionLoop extends BaseLoop<AgentState> {
    * 执行当前模式逻辑
    * 参考原maicraft：直接调用当前模式的执行方法
    */
-  private async executeCurrentMode(): Promise<void> {
+  private async executeCurrentMode(): Promise<boolean> {
     try {
       await this.state.modeManager.executeCurrentMode();
+      return true;
     } catch (error) {
       this.logger.error('❌ 模式执行失败:', undefined, error as Error);
 
@@ -179,6 +182,8 @@ export class MainDecisionLoop extends BaseLoop<AgentState> {
         this.logger.warn('🔄 检测到模式执行异常，尝试恢复到主模式');
         await this.state.modeManager.forceRecoverToMain('模式执行异常恢复');
       }
+
+      return false;
     }
   }
 

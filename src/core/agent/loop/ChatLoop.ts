@@ -73,12 +73,16 @@ export class ChatLoop extends BaseLoop<AgentState> {
 
     // 检查是否应该响应
     if (this.shouldRespond(lastConversation)) {
-      await this.respondToChat();
+      await this.respondToChat(lastConversation);
       this.activeValue -= 1;
     } else if (Math.random() < 0.02 && !this.selfTriggered) {
       // 随机自发聊天
       await this.initiateChat();
+      // 修复：设置冷却时间戳，而不是永久禁止自发聊天
       this.selfTriggered = true;
+      setTimeout(() => {
+        this.selfTriggered = false;
+      }, 5 * 60 * 1000); // 5分钟冷却
     }
   }
 
@@ -110,27 +114,32 @@ export class ChatLoop extends BaseLoop<AgentState> {
   /**
    * 响应聊天
    */
-  private async respondToChat(): Promise<void> {
+  private async respondToChat(lastConversation: ConversationEntry): Promise<void> {
     try {
+      const botName = this.state.config.minecraft.username || this.state.context.gameState.playerName || '麦麦';
+      const senderName = lastConversation.speaker;
+      const mentionedBot = lastConversation.message.includes(botName);
+
       const recentConversations = this.state.memory.conversation.getRecent(10);
       const conversationText = recentConversations
         .map(c => {
-          const botName = this.state.config.minecraft.username || this.state.context.gameState.playerName || '麦麦';
           const speakerDisplay = c.speaker === botName ? '[我]' : `[${c.speaker}]`;
           return `${speakerDisplay}: ${c.message}`;
         })
         .join('\n');
 
       const userPrompt = promptManager.generatePrompt('chat_response', {
-        player_name: this.state.context.gameState.playerName || 'Bot',
+        sender_name: senderName,
+        latest_message: lastConversation.message,
+        mentioned_bot: mentionedBot ? `（@了我）` : '',
         recent_conversations: conversationText,
         current_activity: this.state.planningManager.getCurrentTask()?.title || '空闲中',
-        position: `位置: (${this.state.context.gameState.blockPosition.x}, ${this.state.context.gameState.blockPosition.y}, ${this.state.context.gameState.blockPosition.z})`,
+        position: `(${this.state.context.gameState.blockPosition.x}, ${this.state.context.gameState.blockPosition.y}, ${this.state.context.gameState.blockPosition.z})`,
       });
 
       const systemPrompt = promptManager.generatePrompt('chat_response_system', {
-        bot_name: this.state.context.gameState.playerName || 'Bot',
-        player_name: this.state.context.gameState.playerName || 'Player',
+        bot_name: botName,
+        sender_name: senderName,
       });
       const response = await this.llmManager.chatCompletion(userPrompt, systemPrompt);
 
@@ -138,7 +147,7 @@ export class ChatLoop extends BaseLoop<AgentState> {
 
       if (message) {
         await this.state.context.executor.execute(ActionIds.CHAT, { message });
-        this.state.memory.recordConversation(this.state.context.gameState.playerName || '麦麦', message);
+        this.state.memory.recordConversation(botName, message);
         this.logger.info(`💬 发送聊天: ${message}`);
       }
     } catch (error) {
@@ -151,25 +160,24 @@ export class ChatLoop extends BaseLoop<AgentState> {
    */
   private async initiateChat(): Promise<void> {
     try {
+      const botName = this.state.config.minecraft.username || this.state.context.gameState.playerName || '麦麦';
+
       const recentConversations = this.state.memory.conversation.getRecent(5);
       const conversationText = recentConversations
         .map(c => {
-          const botName = this.state.config.minecraft.username || this.state.context.gameState.playerName || '麦麦';
           const speakerDisplay = c.speaker === botName ? '[我]' : `[${c.speaker}]`;
           return `${speakerDisplay}: ${c.message}`;
         })
         .join('\n');
 
       const userPrompt = promptManager.generatePrompt('chat_initiate', {
-        player_name: this.state.context.gameState.playerName || 'Bot',
         recent_conversations: conversationText,
         current_activity: this.state.planningManager.getCurrentTask()?.title || '空闲中',
-        position: `位置: (${this.state.context.gameState.blockPosition.x}, ${this.state.context.gameState.blockPosition.y}, ${this.state.context.gameState.blockPosition.z})`,
+        position: `(${this.state.context.gameState.blockPosition.x}, ${this.state.context.gameState.blockPosition.y}, ${this.state.context.gameState.blockPosition.z})`,
       });
 
       const systemPrompt = promptManager.generatePrompt('chat_initiate_system', {
-        bot_name: this.state.context.gameState.playerName || 'Bot',
-        player_name: this.state.context.gameState.playerName || 'Player',
+        bot_name: botName,
       });
       const response = await this.llmManager.chatCompletion(userPrompt, systemPrompt);
 
@@ -187,33 +195,28 @@ export class ChatLoop extends BaseLoop<AgentState> {
 
   /**
    * 解析聊天响应
+   * 系统提示词已要求"直接输出纯文本"，不用 JSON / 标签解析
    */
   private parseChatResponse(response: LLMClientResponse): string | null {
-    // 从 LLMClientResponse 中提取文本内容
-    const content = response.success ? response.content || '' : '';
-
     if (!response.success) {
       this.logger.error('LLM聊天调用失败', { error: response.error });
       return null;
     }
 
-    if (!content) {
-      return null;
+    const content = (response.content || '').trim();
+    if (!content) return null;
+
+    // 系统 prompt 要求纯文本输出，直接返回内容
+    // 兜底：如果模型仍然输出了 JSON，尝试提取 message 字段
+    if (content.startsWith('{')) {
+      try {
+        const json = JSON.parse(content);
+        return (json.message || json.reply || json.content || '').trim() || null;
+      } catch {
+        // 不是有效 JSON，按原文返回
+      }
     }
 
-    // 尝试提取【回复】标签中的内容
-    const messageMatch = content.match(/【回复】([\s\S]*?)$/);
-    if (messageMatch) {
-      return messageMatch[1].trim();
-    }
-
-    // 尝试 JSON 格式
-    try {
-      const json = JSON.parse(content);
-      return json.message || null;
-    } catch {
-      // 如果都不是，直接返回原文
-      return content.trim();
-    }
+    return content;
   }
 }
