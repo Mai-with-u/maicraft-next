@@ -29,6 +29,7 @@ import type { WebSocketServer } from '@/api/WebSocketServer';
 import { type AppConfig } from '@/utils/Config';
 import { createLogger, LogLevel, type Logger } from '@/utils/Logger';
 import { ConfigLoader } from '@/utils/Config';
+import { applyPythonMicrosoftAuthPatch } from '@/auth/PythonMicrosoftAuthPatch';
 
 /**
  * 基础错误日志记录器（在配置加载前使用）
@@ -67,10 +68,13 @@ class MaicraftNext {
       // 2. 创建 DI 容器
       this.container = new Container(this.logger);
 
-      // 3. 连接到Minecraft服务器
+      // 3. 应用微软登录补丁（通过 Python 脚本认证）
+      applyPythonMicrosoftAuthPatch();
+
+      // 4. 连接到Minecraft服务器
       await this.connectToMinecraft();
 
-      // 4. 注册基础服务到容器
+      // 5. 注册基础服务到容器
       this.container.registerInstance(ServiceKeys.Config, this.config!);
       this.container.registerInstance(ServiceKeys.Logger, this.logger);
       this.container.registerInstance(ServiceKeys.Bot, this.bot!);
@@ -124,13 +128,21 @@ class MaicraftNext {
     });
 
     // 创建bot
-    this.bot = createBot({
+    const botOptions: any = {
       host: mcConfig.host,
       port: mcConfig.port,
       username: mcConfig.username,
       password: mcConfig.password || undefined,
       auth: mcConfig.auth,
-    });
+    };
+
+    if (mcConfig.auth === 'microsoft') {
+      botOptions.pythonAuthScript = process.env.MAICRAFT_PY_AUTH_SCRIPT || path.join(process.cwd(), 'src', 'auth', 'ms_mc_auth.py');
+      botOptions.pythonBin = process.env.MAICRAFT_PY_BIN || 'python3';
+      this.logger.info('微软登录已切换为 Python 脚本认证', { pythonAuthScript: botOptions.pythonAuthScript, pythonBin: botOptions.pythonBin });
+    }
+
+    this.bot = createBot(botOptions);
 
     // 加载插件
     this.loadPlugins();
